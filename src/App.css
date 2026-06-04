@@ -31,6 +31,7 @@ input {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .top {
@@ -180,10 +181,39 @@ h1 {
   font-size: 12px;
 }
 
+.monthWeek {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 7px;
+  margin-bottom: 7px;
+}
+
+.monthWeekLabel {
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #71717a;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.monthWeekLabel.sunday {
+  color: #71717a;
+}
+
+.monthWeekLabel.saturday {
+  color: #71717a;
+}
+
 .monthGrid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 7px;
+}
+
+.monthBlank {
+  height: 38px;
 }
 
 .monthDay {
@@ -218,14 +248,42 @@ h1 {
   outline: 2px solid #18181b;
 }
 
+.monthDay.sunday span,
+.monthDay.saturday span {
+  color: inherit;
+}
+
 .todayTasks {
   margin-top: 14px;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  padding-right: 2px;
+  padding-bottom: 2px;
+}
+
+.taskList {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  flex: 1;
-  overflow-y: auto;
-  padding-right: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.taskRow {
+  display: grid;
+  grid-template-columns: 1fr 46px;
+  gap: 9px;
+  align-items: stretch;
+  user-select: none;
+  touch-action: none;
+  will-change: transform;
+}
+
+.taskRow.dragging {
+  opacity: 1;
+  z-index: 20;
 }
 
 .taskBar {
@@ -236,16 +294,6 @@ h1 {
   overflow: hidden;
   user-select: none;
   touch-action: none;
-  transition:
-    box-shadow 0.16s ease,
-    opacity 0.16s ease;
-  will-change: transform;
-}
-
-.taskBar.dragging {
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.18);
-  opacity: 0.98;
-  z-index: 20;
 }
 
 .taskFill {
@@ -261,10 +309,8 @@ h1 {
   position: relative;
   z-index: 2;
   min-height: 78px;
-  padding: 12px 10px 12px 16px;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
+  padding: 12px 16px;
+  display: flex;
   align-items: center;
 }
 
@@ -273,19 +319,39 @@ h1 {
   font-size: 19px;
 }
 
-.taskActions {
+.deleteButton {
+  width: 46px;
+  min-height: 78px;
+  border: none;
+  border-radius: 20px;
+  background: #f4f4f5;
+  color: #18181b;
   display: flex;
-  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  flex-shrink: 0;
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease;
 }
 
-.taskActions button {
-  width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.75);
-  color: #18181b;
-  font-size: 20px;
+.deleteButton:hover {
+  background: #e4e4e7;
+}
+
+.deleteButton:active {
+  transform: scale(0.94);
+  background: #d4d4d8;
+}
+
+.deleteIcon {
+  width: 27px;
+  height: 27px;
+  stroke: currentColor;
+  stroke-width: 4.4;
+  stroke-linecap: round;
+  fill: none;
 }
 
 .addArea {
@@ -321,6 +387,92 @@ h1 {
   flex-shrink: 0;
 }
 
+.confirmOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 24, 27, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 100;
+}
+
+.confirmModal {
+  width: 100%;
+  max-width: 330px;
+  background: white;
+  border-radius: 28px;
+  padding: 22px;
+  text-align: center;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.18);
+}
+
+.confirmIcon {
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 14px;
+  border-radius: 18px;
+  background: #f4f4f5;
+  color: #18181b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirmIcon svg {
+  width: 30px;
+  height: 30px;
+  stroke: currentColor;
+  stroke-width: 4.2;
+  stroke-linecap: round;
+  fill: none;
+}
+
+.confirmModal h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.confirmModal p {
+  margin: 8px 0 18px;
+  color: #71717a;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.confirmActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.confirmActions button {
+  border: none;
+  border-radius: 16px;
+  padding: 13px 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.cancelButton {
+  background: #f4f4f5;
+  color: #18181b;
+}
+
+.cancelButton:active {
+  background: #e4e4e7;
+}
+
+.confirmDeleteButton {
+  background: #18181b;
+  color: white;
+}
+
+.confirmDeleteButton:active {
+  background: #09090b;
+}
+
 @media (max-height: 720px) {
   h1 {
     font-size: 32px;
@@ -348,6 +500,10 @@ h1 {
   }
 
   .taskContent {
+    min-height: 64px;
+  }
+
+  .deleteButton {
     min-height: 64px;
   }
 

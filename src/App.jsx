@@ -27,7 +27,11 @@ const defaultHabits = [
   { id: 3, name: "睡眠" },
 ];
 
+const weekLabels = ["日", "月", "火", "水", "木", "金", "土"];
+
 const daysInMonth = new Date(YEAR, MONTH, 0).getDate();
+
+const firstDayOfMonth = new Date(YEAR, MONTH - 1, 1).getDay();
 
 const getInitialDay = () => {
   const now = new Date();
@@ -45,24 +49,22 @@ const makeDateKey = (day) => {
 
 const getWeekday = (day) => {
   const date = new Date(YEAR, MONTH - 1, day);
-  return ["日", "月", "火", "水", "木", "金", "土"][date.getDay()];
+  return weekLabels[date.getDay()];
 };
 
-// 並び替え中に横へズレないようにする
-const restrictToVerticalOnly = ({ transform }) => {
-  return {
-    ...transform,
-    x: 0,
-  };
-};
-
-function SortableHabit({ habit, value, onProgressChange, onDelete }) {
+function SortableHabit({
+  habit,
+  value,
+  onProgressChange,
+  onRequestDelete,
+}) {
   const pointerRef = useRef({
     down: false,
     activeProgress: false,
     startX: 0,
     startY: 0,
     moved: false,
+    lockedVertical: false,
   });
 
   const {
@@ -81,6 +83,17 @@ function SortableHabit({ habit, value, onProgressChange, onDelete }) {
     transition,
   };
 
+  const resetPointer = () => {
+    pointerRef.current = {
+      down: false,
+      activeProgress: false,
+      startX: 0,
+      startY: 0,
+      moved: false,
+      lockedVertical: false,
+    };
+  };
+
   const updateByPointer = (event) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - rect.left;
@@ -96,6 +109,7 @@ function SortableHabit({ habit, value, onProgressChange, onDelete }) {
       startX: event.clientX,
       startY: event.clientY,
       moved: false,
+      lockedVertical: false,
     };
 
     if (listeners.onPointerDown) {
@@ -104,6 +118,11 @@ function SortableHabit({ habit, value, onProgressChange, onDelete }) {
   };
 
   const handlePointerMove = (event) => {
+    if (isDragging) {
+      resetPointer();
+      return;
+    }
+
     const pointer = pointerRef.current;
     if (!pointer.down) return;
 
@@ -114,13 +133,18 @@ function SortableHabit({ habit, value, onProgressChange, onDelete }) {
       pointer.moved = true;
     }
 
-    // 横に動かした時だけ達成度変更モード
-    if (!pointer.activeProgress) {
-      const isHorizontal = Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 6;
+    const isVertical = Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6;
+    const isHorizontal = Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 6;
 
-      if (isHorizontal) {
-        pointer.activeProgress = true;
-      }
+    // 縦方向に動かしている時は達成度を触らない
+    if (isVertical && !pointer.activeProgress) {
+      pointer.lockedVertical = true;
+      return;
+    }
+
+    // 横に動かした時だけ達成度変更モード
+    if (isHorizontal && !pointer.lockedVertical) {
+      pointer.activeProgress = true;
     }
 
     if (pointer.activeProgress) {
@@ -129,57 +153,88 @@ function SortableHabit({ habit, value, onProgressChange, onDelete }) {
   };
 
   const handlePointerUp = (event) => {
+    if (isDragging) {
+      resetPointer();
+      return;
+    }
+
     const pointer = pointerRef.current;
+
+    // 縦移動っぽい操作の後は、タップ扱いで達成度を変えない
+    if (pointer.lockedVertical) {
+      resetPointer();
+      return;
+    }
 
     // タップだけでも少し記録できる
     if (pointer.down && !pointer.moved) {
       updateByPointer(event);
     }
 
-    pointerRef.current = {
-      down: false,
-      activeProgress: false,
-      startX: 0,
-      startY: 0,
-      moved: false,
-    };
+    resetPointer();
   };
+  const handlePointerLeave = (event) => {
+    const pointer = pointerRef.current;
 
+    if (!pointer.activeProgress) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+
+    // 右側に抜けたら100%、左側に抜けたら0%で確定
+    if (event.clientX >= rect.right) {
+      onProgressChange(habit.id, 100);
+    } else if (event.clientX <= rect.left) {
+      onProgressChange(habit.id, 0);
+    }
+
+    resetPointer();
+  };
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`taskBar ${isDragging ? "dragging" : ""}`}
-      {...attributes}
-      {...listeners}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      className={`taskRow ${isDragging ? "dragging" : ""}`}
     >
-      <div className="taskFill" style={{ width: `${value}%` }} />
+      <div
+        className="taskBar"
+        {...attributes}
+        {...listeners}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+      >
+        <div className="taskFill" style={{ width: `${value}%` }} />
 
-      <div className="taskContent">
-        <div className="taskText">
-          <h3>{habit.name}</h3>
-        </div>
-
-        <div
-          className="taskActions"
-          onPointerDown={(event) => event.stopPropagation()}
-          onPointerMove={(event) => event.stopPropagation()}
-          onPointerUp={(event) => event.stopPropagation()}
-          onPointerCancel={(event) => event.stopPropagation()}
-        >
-          <button onClick={() => onDelete(habit.id)}>×</button>
+        <div className="taskContent">
+          <div className="taskText">
+            <h3>{habit.name}</h3>
+          </div>
         </div>
       </div>
+
+      <button
+        className="deleteButton"
+        onClick={() => onRequestDelete(habit)}
+        aria-label={`${habit.name}を削除`}
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerMove={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+        onPointerCancel={(event) => event.stopPropagation()}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="deleteIcon">
+          <path d="M7 7L17 17" />
+          <path d="M17 7L7 17" />
+        </svg>
+      </button>
     </div>
   );
 }
 
 export default function App() {
   const dateButtonRefs = useRef({});
+  const taskListRef = useRef(null);
 
   const [selectedDay, setSelectedDay] = useState(getInitialDay());
 
@@ -195,6 +250,7 @@ export default function App() {
 
   const [input, setInput] = useState("");
   const [showMonth, setShowMonth] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -204,6 +260,31 @@ export default function App() {
       },
     })
   );
+
+  // タスクバーが実際に並んでいる範囲だけにドラッグを制限する
+  const restrictToTaskListOnly = ({ transform, activeNodeRect }) => {
+    const listElement = taskListRef.current;
+
+    if (!listElement || !activeNodeRect) {
+      return {
+        ...transform,
+        x: 0,
+      };
+    }
+
+    const listRect = listElement.getBoundingClientRect();
+
+    const minY = listRect.top - activeNodeRect.top;
+    const maxY = listRect.bottom - activeNodeRect.bottom;
+
+    const limitedY = Math.min(Math.max(transform.y, minY), maxY);
+
+    return {
+      ...transform,
+      x: 0,
+      y: limitedY,
+    };
+  };
 
   useEffect(() => {
     localStorage.setItem("habits-dnd-v3", JSON.stringify(habits));
@@ -293,6 +374,21 @@ export default function App() {
     });
   };
 
+  const requestDeleteHabit = (habit) => {
+    setDeleteTarget(habit);
+  };
+
+  const cancelDeleteHabit = () => {
+    setDeleteTarget(null);
+  };
+
+  const confirmDeleteHabit = () => {
+    if (!deleteTarget) return;
+
+    deleteHabit(deleteTarget.id);
+    setDeleteTarget(null);
+  };
+
   const handleDragEnd = (event) => {
     const { active, over } = event;
 
@@ -373,22 +469,42 @@ export default function App() {
         {showMonth && (
           <section className="monthPanel">
             <div className="monthPanelTop">
-              <h3>6月</h3>
+              <h3>2026年6月</h3>
               <span>{recordedDays}日の記録</span>
             </div>
 
+            <div className="monthWeek">
+              {weekLabels.map((label) => (
+                <div
+                  key={label}
+                  className={`monthWeekLabel ${
+                    label === "日" ? "sunday" : ""
+                  } ${label === "土" ? "saturday" : ""}`}
+                >
+                  {label}
+                </div>
+              ))}
+            </div>
+
             <div className="monthGrid">
+              {Array.from({ length: firstDayOfMonth }, (_, i) => (
+                <div key={`blank-${i}`} className="monthBlank" />
+              ))}
+
               {Array.from({ length: daysInMonth }, (_, i) => {
                 const day = i + 1;
                 const hasRecord = hasDayRecord(day);
                 const isSelected = day === selectedDay;
                 const average = getDayAverage(day);
+                const weekday = getWeekday(day);
 
                 return (
                   <button
                     key={day}
                     className={`monthDay ${hasRecord ? "hasRecord" : ""} ${
                       isSelected ? "selected" : ""
+                    } ${weekday === "日" ? "sunday" : ""} ${
+                      weekday === "土" ? "saturday" : ""
                     }`}
                     onClick={() => {
                       setSelectedDay(day);
@@ -405,39 +521,46 @@ export default function App() {
           </section>
         )}
 
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          modifiers={[restrictToVerticalOnly]}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={habits.map((habit) => habit.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <section className="todayTasks">
-              {habits.map((habit) => {
-                const value = Number(logs[getLogKey(habit.id)] || 0);
+        <section className="todayTasks">
+          <div className="taskList" ref={taskListRef}>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={[restrictToTaskListOnly]}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={habits.map((habit) => habit.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {habits.map((habit) => {
+                  const value = Number(logs[getLogKey(habit.id)] || 0);
 
-                return (
-                  <SortableHabit
-                    key={habit.id}
-                    habit={habit}
-                    value={value}
-                    onProgressChange={updateProgress}
-                    onDelete={deleteHabit}
-                  />
-                );
-              })}
-            </section>
-          </SortableContext>
-        </DndContext>
+                  return (
+                    <SortableHabit
+                      key={habit.id}
+                      habit={habit}
+                      value={value}
+                      onProgressChange={updateProgress}
+                      onRequestDelete={requestDeleteHabit}
+                    />
+                  );
+                })}
+              </SortableContext>
+            </DndContext>
+          </div>
+        </section>
 
         <div className="addArea">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="習慣を追加"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                addHabit();
+              }
+            }}
           />
           <button onClick={addHabit}>＋</button>
         </div>
@@ -445,6 +568,36 @@ export default function App() {
         <p className="hint">
           横に動かすと達成度。長押しして上下に動かすと並び替え。
         </p>
+
+        {deleteTarget && (
+          <div className="confirmOverlay">
+            <div className="confirmModal">
+              <div className="confirmIcon">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 7L17 17" />
+                  <path d="M17 7L7 17" />
+                </svg>
+              </div>
+
+              <h3>この習慣を削除しますか？</h3>
+
+              <p>「{deleteTarget.name}」の記録も一緒に削除されます。</p>
+
+              <div className="confirmActions">
+                <button className="cancelButton" onClick={cancelDeleteHabit}>
+                  キャンセル
+                </button>
+
+                <button
+                  className="confirmDeleteButton"
+                  onClick={confirmDeleteHabit}
+                >
+                  削除する
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
     </main>
   );
